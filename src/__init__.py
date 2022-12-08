@@ -1,9 +1,11 @@
 from __future__ import annotations
+
 from typing import Any
 
-from aqt import mw, gui_hooks, DialogManager
-from aqt.toolbar import Toolbar
+from anki.cards import Card
+from aqt import DialogManager, gui_hooks, mw
 from aqt.qt import *
+from aqt.toolbar import Toolbar
 from aqt.utils import showWarning
 
 ADDON_NAME = "Focus on Single Deck"
@@ -59,8 +61,25 @@ def add_link(links: list[str], top_toolbar: Toolbar) -> None:
     links.append(my_link)
 
 
+should_prevent_review_state_change: bool = False
+last_review_card: Card | None = None
+
+
+def on_reviewer_will_end() -> None:
+    global last_review_card
+    last_review_card = mw.reviewer.card
+
+
+def on_state_wil_change(new_state: str, old_state: str) -> None:
+    global should_prevent_review_state_change
+    if old_state == "review" or new_state == "review":
+        should_prevent_review_state_change = (
+            ACTIVE and old_state == "review" and bool(last_review_card)
+        )
+
+
 def on_state_change(new_state: str, old_state: str) -> None:
-    if ACTIVE and old_state == "review" and mw.col.sched.getCard():
+    if should_prevent_review_state_change:
         mw.moveToState("review")
         return
     if new_state == "overview":
@@ -90,5 +109,7 @@ def restricted_open(self: DialogManager, name: str, *args: Any, **kwargs: Any) -
 
 gui_hooks.top_toolbar_did_init_links.append(add_link)
 gui_hooks.state_did_change.append(on_state_change)
+gui_hooks.state_will_change.append(on_state_wil_change)
+gui_hooks.reviewer_will_end.append(on_reviewer_will_end)
 open_dialog = DialogManager.open
 DialogManager.open = restricted_open
